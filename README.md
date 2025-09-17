@@ -229,4 +229,4 @@ Cada pessoa detectada aparece com uma **caixa verde** e um **ID único**, que pe
 
 ---
 
-👉 Quer que eu monte também um **exemplo de saída esperada com imagens ilustrativas (mockup de tela com bounding boxes e IDs)** para deixar o README mais didático?
+
