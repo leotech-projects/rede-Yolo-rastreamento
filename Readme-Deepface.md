@@ -1,180 +1,165 @@
-Perfeito 🚀
-Comparar **a cada frame** com todas as fotos é lento. O jeito certo é **pré-calcular embeddings** das imagens da galeria, e depois só comparar com os embeddings das pessoas detectadas no vídeo. Isso reduz o custo e acelera bastante o reconhecimento.
-
-Vou separar em **duas etapas**:
+Perfeito 🚀 Vou deixar o README mais moderno e visual com **emojis** e seções bem destacadas.
 
 ---
 
-## 📂 Estrutura Final
+# 📖 README — YOLO + DeepSORT + DeepFace
+
+**🔎 Descrição curta:**
+Sistema de **detecção (YOLOv8)** + **rastreamento (DeepSORT)** + **reconhecimento facial (DeepFace)**.
+Ele detecta pessoas em vídeo, atribui um `track_id` único a cada uma, compara com fotos cadastradas e salva um log de identificações.
+
+---
+
+## 🛠️ Requisitos
+
+* 🐍 **Python 3.8+**
+* 📦 **pip atualizado**
+* ⚡ **GPU/CUDA opcional** (recomendado para desempenho — instale PyTorch com CUDA se disponível)
+
+---
+
+## ⚙️ Instalação
+
+```bash
+# 1️⃣ Criar ambiente virtual
+python -m venv venv
+
+# Ativar venv (Linux/macOS)
+source venv/bin/activate
+
+# Ativar venv (Windows PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# 2️⃣ Atualizar pip e instalar dependências
+pip install --upgrade pip
+pip install ultralytics deepface opencv-python deep-sort-realtime numpy
+```
+
+💡 Para usar **GPU**, instale PyTorch com CUDA antes (siga docs oficiais do PyTorch).
+
+---
+
+## 📂 Estrutura do Projeto
 
 ```
 yolo-deepface-multi/
-│── cadastro.py                  # Cadastro de várias fotos por pessoa
-│── build_embeddings.py          # Pré-calcula os embeddings das fotos
-│── yolo_face_gallery_fast.py    # Rastreamento otimizado com embeddings
-│── embeddings.pkl               # Banco de embeddings gerado
-│── gallery/                     
-│    ├── joao_1.jpg
-│    ├── joao_2.jpg
-│    ├── maria_1.jpg
-│    └── pedro_1.jpg
-│── video.mp4
-│── README.md
+│── cadastro.py                  # captura fotos de pessoas
+│── build_embeddings.py          # gera embeddings.pkl
+│── yolo_face_gallery_tracker.py # rastreamento + reconhecimento + log
+│── gallery/                     # fotos cadastradas (ex: joao_1.jpg, maria_1.jpg)
+│── embeddings.pkl               # gerado a partir da galeria
+│── log_identificacoes.csv       # registros das identificações
+│── video.mp4                    # vídeo de teste (opcional)
 ```
 
 ---
 
-## 📝 Código: **build\_embeddings.py**
+## 👤 Passo 1 — Cadastrar Pessoas
 
-```python
-import os
-import pickle
-from deepface import DeepFace
+📸 Execute o cadastro para salvar fotos na pasta `gallery/`:
 
-GALLERY_PATH = "gallery/"
-EMBEDDINGS_FILE = "embeddings.pkl"
-
-# Dicionário para guardar os embeddings
-embeddings = {}
-
-print("Gerando embeddings das imagens da galeria...")
-
-for f in os.listdir(GALLERY_PATH):
-    if f.lower().endswith((".jpg", ".png", ".jpeg")):
-        name = f.split("_")[0]
-        file_path = os.path.join(GALLERY_PATH, f)
-
-        try:
-            embedding = DeepFace.represent(
-                img_path=file_path,
-                model_name="ArcFace",
-                enforce_detection=False
-            )[0]["embedding"]
-
-            if name not in embeddings:
-                embeddings[name] = []
-            embeddings[name].append(embedding)
-
-            print(f"Embedding gerado para {f}")
-
-        except Exception as e:
-            print(f"Erro ao processar {f}: {e}")
-
-# Salvar em arquivo
-with open(EMBEDDINGS_FILE, "wb") as f:
-    pickle.dump(embeddings, f)
-
-print(f"Embeddings salvos em {EMBEDDINGS_FILE}")
+```bash
+python cadastro.py
 ```
+
+👉 Digite o nome da pessoa, posicione-a na frente da webcam e pressione **ESPAÇO** para capturar cada foto.
+👉 Pressione **ESC** para finalizar.
+👉 As imagens ficam salvas como `nome_1.jpg`, `nome_2.jpg`...
 
 ---
 
-## 📝 Código: **yolo\_face\_gallery\_fast.py**
+## 🧠 Passo 2 — Gerar Embeddings
 
-```python
-import cv2
-import pickle
-import numpy as np
-from ultralytics import YOLO
-from deepface import DeepFace
-
-# Arquivo com embeddings
-EMBEDDINGS_FILE = "embeddings.pkl"
-
-# Carregar YOLO
-model = YOLO("yolov8n.pt")
-
-# Carregar embeddings da galeria
-with open(EMBEDDINGS_FILE, "rb") as f:
-    gallery_embeddings = pickle.load(f)
-
-print("Embeddings carregados para:", list(gallery_embeddings.keys()))
-
-# Função para calcular embedding de uma face
-def get_embedding(face_img):
-    try:
-        rep = DeepFace.represent(
-            img_path=face_img,
-            model_name="ArcFace",
-            enforce_detection=False
-        )[0]["embedding"]
-        return np.array(rep)
-    except:
-        return None
-
-# Função para comparar embeddings (distância euclidiana)
-def compare_embeddings(emb1, emb2, threshold=0.7):
-    dist = np.linalg.norm(emb1 - emb2)
-    return dist < threshold
-
-# Abrir vídeo (ou 0 para webcam)
-cap = cv2.VideoCapture("video.mp4")
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    results = model(frame)
-
-    for r in results[0].boxes:
-        x1, y1, x2, y2 = map(int, r.xyxy[0])
-        conf = float(r.conf[0])
-        cls = int(r.cls[0])
-
-        if cls == 0 and conf > 0.5:  # apenas pessoas
-            face_crop = frame[y1:y2, x1:x2]
-
-            identity = "Desconhecido"
-            color = (0, 0, 255)
-
-            emb = get_embedding(face_crop)
-            if emb is not None:
-                for name, emb_list in gallery_embeddings.items():
-                    for ref_emb in emb_list:
-                        if compare_embeddings(emb, np.array(ref_emb)):
-                            identity = name
-                            color = (0, 255, 0)
-                            break
-                    if identity != "Desconhecido":
-                        break
-
-            # Desenhar caixa e nome
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, identity, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-    cv2.imshow("YOLO + DeepFace (Rápido com Embeddings)", frame)
-
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
-```
-
----
-
-## ▶️ Como Usar
-
-1. **Cadastrar fotos** com `cadastro.py`.
-2. **Gerar embeddings** uma única vez:
+Cria o arquivo `embeddings.pkl` com representações faciais da galeria.
 
 ```bash
 python build_embeddings.py
 ```
 
-Isso cria `embeddings.pkl`.
-3\. **Rodar rastreamento otimizado**:
+---
+
+## 🎥 Passo 3 — Rodar Rastreamento + Reconhecimento
+
+Execute o rastreamento com YOLO + DeepSORT + DeepFace:
 
 ```bash
-python yolo_face_gallery_fast.py
+python yolo_face_gallery_tracker.py
+```
+
+* Por padrão, roda no `video.mp4`.
+* Para usar a **webcam**, edite no código:
+
+```python
+cap = cv2.VideoCapture("video.mp4")
+# altere para:
+cap = cv2.VideoCapture(0)
 ```
 
 ---
 
-✅ Agora o reconhecimento fica muito mais rápido, pois cada face detectada é comparada só no **espaço vetorial** e não mais com imagens inteiras.
+## 🔄 Como Funciona
+
+1️⃣ **YOLOv8** detecta pessoas em cada frame.
+2️⃣ **DeepSORT** gera um `track_id` único por indivíduo.
+3️⃣ Para cada novo `track_id`:
+
+* recorta o rosto,
+* gera embedding com **DeepFace**,
+* compara com `embeddings.pkl`,
+* atribui nome se a distância < **0.7** (ajustável).
+  4️⃣ Resultados aparecem na tela e são salvos em `log_identificacoes.csv`.
 
 ---
 
-Quer que eu adicione também um **limiar de confiança por pessoa** (ex.: “se a média de distâncias para as fotos de João for menor que X, classifica como João”), para aumentar a precisão?
+## 📝 Exemplo de Log
+
+Arquivo `log_identificacoes.csv`:
+
+```
+timestamp,track_id,identity,distance
+2025-09-17 18:35:01,1,joao,0.4231
+2025-09-17 18:35:02,2,maria,0.3675
+2025-09-17 18:35:04,3,Desconhecido,0.9123
+```
+
+---
+
+## 🔧 Parâmetros Ajustáveis
+
+* 📌 **Modelo YOLO**: troque `"yolov8n.pt"` por `"yolov8s.pt"`, `"yolov8m.pt"`...
+* 🎯 **Threshold** de reconhecimento (`0.7` default). Menor = mais rígido.
+* 👥 **DeepSORT**: ajuste `max_age`, `n_init`, `max_cosine_distance` para melhorar rastreamento.
+* ⏱️ Controle de log: pode ser configurado para evitar registros duplicados em curtos intervalos.
+
+---
+
+## ⚡ Dicas de Performance & Precisão
+
+* Use **várias fotos por pessoa** em diferentes ângulos e iluminação.
+* O modelo **ArcFace** (DeepFace) costuma ser o mais estável.
+* Com **GPU**, o desempenho melhora drasticamente.
+* Se detectar muitos falsos positivos → aumente confiança do YOLO (`conf > 0.5`).
+* Para ambientes complexos, combine com **Person Re-ID** (OSNet, FastReID).
+
+---
+
+## 🛑 Problemas Comuns
+
+* ❌ **Câmera não abre** → teste índices `0`, `1`, `2`.
+* ⚠️ **Erro DeepFace** → use `enforce_detection=False` (já no código).
+* 🐢 **Lento** → use GPU, YOLO mais leve (`yolov8n`) ou reduza resolução do vídeo.
+* 🔄 **Identificações repetidas** → já mitigado com `track_id`, mas pode aumentar intervalo mínimo de log.
+
+---
+
+## ✅ Conclusão
+
+Esse sistema entrega:
+
+* 🚀 **Detecção rápida com YOLOv8**
+* 👤 **Rastreamento consistente com DeepSORT**
+* 🧠 **Reconhecimento facial via embeddings DeepFace**
+* 📝 **Log estruturado para auditoria e análise**
+
+---
+
