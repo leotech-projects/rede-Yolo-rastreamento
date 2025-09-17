@@ -1,7 +1,3 @@
-Perfeito 🚀 Vou deixar o README mais moderno e visual com **emojis** e seções bem destacadas.
-
----
-
 # 📖 README — YOLO + DeepSORT + DeepFace
 
 **🔎 Descrição curta:**
